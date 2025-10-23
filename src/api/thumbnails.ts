@@ -1,9 +1,10 @@
 import { getBearerToken, validateJWT } from "../auth";
 import { respondWithJSON } from "./json";
-import { getVideo } from "../db/videos";
+import { getVideo, updateVideo } from "../db/videos";
 import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
-import { BadRequestError, NotFoundError } from "./errors";
+import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
+import { JsonWebTokenError } from "jsonwebtoken";
 
 type Thumbnail = {
   data: ArrayBuffer;
@@ -47,7 +48,46 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
 
   console.log("uploading thumbnail for video", videoId, "by user", userID);
 
-  // TODO: implement the upload here
+  const thumbnailFile = (await req.formData()).get("thumbnail");
+  if (!thumbnailFile || !(thumbnailFile instanceof File)) {
+    throw new BadRequestError("thumbnail is required");
+  }
 
-  return respondWithJSON(200, null);
+  console.log(
+    `Thumbnail recieved: ${thumbnailFile.name} ${thumbnailFile.size} ${thumbnailFile.type}`
+  );
+
+  const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
+
+  if (thumbnailFile.size > MAX_UPLOAD_SIZE) {
+    console.log("Thumbnail upload failed: file size exceeds limit");
+    throw new BadRequestError("Thumbnail file size exceeds the maximum limit");
+  }
+
+  const mediaType = thumbnailFile.type;
+  const data = await thumbnailFile.arrayBuffer();
+
+  const video = getVideo(cfg.db, videoId);
+  if (!video) {
+    console.log("Thumbnail upload failed: video not found");
+    throw new NotFoundError("Couldn't find video");
+  }
+
+  if (
+    video.userID !== validateJWT(getBearerToken(req.headers), cfg.jwtSecret)
+  ) {
+    console.log("Thumbnail upload failed: user forbidden");
+    throw new UserForbiddenError(
+      "You do not have permission to access this thumbnail"
+    );
+  }
+
+  video.thumbnailURL = `/api/thumbnails/${videoId}`;
+
+  console.log("Updating video metadata with thumbnail URL");
+  updateVideo(cfg.db, video);
+
+  videoThumbnails.set(videoId, { data, mediaType });
+  console.log("Thumbnail upload successful");
+  return respondWithJSON(200, video);
 }
