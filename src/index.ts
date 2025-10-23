@@ -48,9 +48,9 @@ Bun.serve({
     "/api/thumbnail_upload/:videoId": {
       POST: withConfig(cfg, handlerUploadThumbnail),
     },
-    "/api/thumbnails/:videoId": {
-      GET: withConfig(cfg, handlerGetThumbnail),
-    },
+    // "/api/thumbnails/:videoId": {
+    //   GET: withConfig(cfg, handlerGetThumbnail),
+    // },
     "/api/video_upload/:videoId": {
       POST: withConfig(cfg, handlerUploadVideo),
     },
