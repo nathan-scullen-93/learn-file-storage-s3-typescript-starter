@@ -5,6 +5,7 @@ import type { ApiConfig } from "../config";
 import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
 import { JsonWebTokenError } from "jsonwebtoken";
+import path from "path";
 
 type Thumbnail = {
   data: ArrayBuffer;
@@ -65,7 +66,10 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
   }
 
   const mediaType = thumbnailFile.type;
-  const data = await Buffer.from(await thumbnailFile.arrayBuffer()).toBase64();
+  const filetypeParts = mediaType.split("/");
+  const fileExtension = filetypeParts[filetypeParts.length - 1];
+  // const data = await Buffer.from(await thumbnailFile.arrayBuffer()).toBase64();
+  const data = await thumbnailFile.arrayBuffer();
 
   const video = getVideo(cfg.db, videoId);
   if (!video) {
@@ -82,10 +86,15 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
     );
   }
 
-  video.thumbnailURL =  `data:${mediaType};base64,${data}`;
+  // video.thumbnailURL =  `data:${mediaType};base64,${data}`;
+  video.thumbnailURL = `http://localhost:${cfg.port}/assets/${videoId}.${fileExtension}`;
 
   console.log("Updating video metadata with thumbnail URL");
   updateVideo(cfg.db, video);
+
+  const localPath = path.join(cfg.assetsRoot, `${videoId}.${fileExtension}`);
+
+  await Bun.write(localPath, data);
 
   //videoThumbnails.set(videoId, { data, mediaType });
   console.log("Thumbnail upload successful");
