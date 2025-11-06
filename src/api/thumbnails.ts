@@ -58,6 +58,14 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
     `Thumbnail recieved: ${thumbnailFile.name} ${thumbnailFile.size} ${thumbnailFile.type}`
   );
 
+  if (
+    thumbnailFile.type !== "image/png" &&
+    thumbnailFile.type !== "image/jpeg"
+  ) {
+    console.log("Thumbnail upload failed: invalid file type");
+    throw new BadRequestError("Thumbnail must be a PNG or JPEG image");
+  }
+
   const MAX_UPLOAD_SIZE = 10 * 1024 * 1024; // 10 MB
 
   if (thumbnailFile.size > MAX_UPLOAD_SIZE) {
