@@ -6,6 +6,7 @@ import type { BunRequest } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
 import { JsonWebTokenError } from "jsonwebtoken";
 import path from "path";
+import { randomBytes } from "crypto";
 
 type Thumbnail = {
   data: ArrayBuffer;
@@ -93,14 +94,15 @@ export async function handlerUploadThumbnail(cfg: ApiConfig, req: BunRequest) {
       "You do not have permission to access this thumbnail"
     );
   }
+  let randBytes = randomBytes(32).toString("base64url"); // Use this to generate a random filename therefore avoiding the need for caching
 
   // video.thumbnailURL =  `data:${mediaType};base64,${data}`;
-  video.thumbnailURL = `http://localhost:${cfg.port}/assets/${videoId}.${fileExtension}`;
+  video.thumbnailURL = `http://localhost:${cfg.port}/assets/${randBytes}.${fileExtension}`;
 
   console.log("Updating video metadata with thumbnail URL");
   updateVideo(cfg.db, video);
 
-  const localPath = path.join(cfg.assetsRoot, `${videoId}.${fileExtension}`);
+  const localPath = path.join(cfg.assetsRoot, `${randBytes}.${fileExtension}`);
 
   await Bun.write(localPath, data);
 
