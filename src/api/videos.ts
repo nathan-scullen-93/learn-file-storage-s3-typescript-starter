@@ -57,25 +57,157 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
 
   await Bun.write(localPath, data);
 
-  //Copy the file to s3 storage
-  const metadata = s3.file(`${randBytes}.${fileExtension}`);
+  //Get the aspect ratio of the video
+  // then modify the filepath depending on if its landscape or portrait
+  const aspectRatio = await getVideoAspectRatio(localPath);
+  console.log("Video aspect ratio:", aspectRatio);
+
+  //Upload the processed video to s3
+  const processedVideo = await processVideoForFastStart(localPath);
+  const processedBasename = path.basename(processedVideo); // e.g. ndy...processed.mp4
+  const s3Key = `${aspectRatio}/${processedBasename}`;
+  const metadata = s3.file(s3Key);
 
   try {
-    await metadata.write(Bun.file(localPath), {
-      type: "video/mp4",
-    });
+      //Copy the file to s3 storage
+    await metadata.write(Bun.file(processedVideo), { type: "video/mp4" });
+
     //Remove the temp video file after processing
     await Bun.file(localPath).delete();
+    await Bun.file(processedVideo).delete();
+    console.log("Removed temporary files");
 
-//Update the videoURL in the database
-  const s3Url = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${randBytes}.${fileExtension}`;
-  video.videoURL = s3Url;
-  updateVideo(cfg.db, video);
-
+    //Update the videoURL in the database
+    const s3Url = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3Key}`;
+    video.videoURL = s3Url;
+    updateVideo(cfg.db, video);
   } catch (error) {
     console.log("Video upload failed: S3 upload error", error);
     throw new Error("Failed to upload video to storage");
   }
 
   return respondWithJSON(200, null);
+}
+
+//CH4 L3 Object Storage Dynamic Path
+export async function getVideoAspectRatio(filepath: string): Promise<string> {
+  let result = "";
+
+  console.log("Getting video aspect ratio for file:", filepath);
+
+  // console.log("PATH:", process.env.PATH);
+
+  //TESTING
+  // console.log("proc2 process");
+  // const proc2 = Bun.spawn(
+  //   ["/usr/bin/ffprobe", "-v","error","-select_streams","v:0","-show_entries","stream=width,height","-of","json", filepath],
+  //   { stdout: "pipe", stderr: "pipe" }
+  // );
+
+  console.log("proc process");
+  const proc = Bun.spawn(
+    [
+      "ffprobe",
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "json",
+      filepath,
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+      onExit(subprocess, exitCode, signalCode, error) {
+        if (exitCode !== 0) {
+          console.error(`ffprobe failed with exit code ${exitCode}`);
+        }
+      },
+    }
+  );
+
+  await proc.exited;
+
+  const stdout = await new Response(proc.stdout).text();
+  console.log("ffprobe stdout:", stdout);
+
+  const stderr = await new Response(proc.stderr).text();
+  console.log("ffprobe stderr:", stderr);
+
+  if (proc.exitCode !== 0) {
+    throw new Error(`ffprobe failed (${proc.exitCode}): ${stderr}`);
+  }
+
+  const data = JSON.parse(stdout);
+  const s = data.streams[0];
+  const w = Number(s.width);
+  const h = Number(s.height);
+
+  if (!Number.isFinite(w) || !Number.isFinite(h) || h === 0) {
+    return "other";
+  }
+
+  const ratio = w / h;
+
+  // tolerance for rounding
+  if (Math.abs(ratio - 16 / 9) < 0.05) return "landscape";
+  if (Math.abs(ratio - 9 / 16) < 0.05) return "portrait";
+  return "other";
+}
+
+export async function processVideoForFastStart(
+  inputFilePath: string
+): Promise<string> {
+  console.log("Processing video for fast start:", inputFilePath);
+
+  if (!inputFilePath.endsWith(".mp4")) {
+    throw new Error("Input file must be an mp4 file");
+  }
+
+  let outputFilePath = inputFilePath.replace(/.mp4$/i, ".processed.mp4");
+  console.log("Output file path:", outputFilePath);
+
+  const proc = Bun.spawn(
+    [
+      "ffmpeg",
+      "-y",
+      "-i",
+      inputFilePath,
+      "-map_metadata",
+      "0",
+      "-c",
+      "copy",
+      "-movflags",
+      "+faststart",
+      "-f",
+      "mp4",
+      outputFilePath,
+    ],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+      onExit(subprocess, exitCode, signalCode, error) {
+        if (exitCode !== 0) {
+          console.error(`ffmpeg failed with exit code ${exitCode}`);
+        }
+      },
+    }
+  );
+
+  await proc.exited;
+
+  const stdout = await new Response(proc.stdout).text();
+  console.log("ffmpeg stdout:", stdout);
+
+  const stderr = await new Response(proc.stderr).text();
+  console.log("ffmpeg stderr:", stderr);
+
+  if (proc.exitCode !== 0) {
+    throw new Error(`ffmpeg failed (${proc.exitCode}): ${stderr}`);
+  }
+
+  return outputFilePath;
 }
