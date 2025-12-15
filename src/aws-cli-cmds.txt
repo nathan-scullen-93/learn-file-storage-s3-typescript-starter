@@ -175,3 +175,12 @@ ffprobe -v error -print_format json -show_streams https://tubely-31415926535.s3.
         }
     ]
 }
+
+
+-----------------
+
+CH6 L1
+
+aws s3 cp E:\DEV\Boot-dev\typescript-cdn-file-servers\proj1\learn-file-storage-s3-typescript-starter\samples\boots-image-vertical.png s3://tubely-31415926535/backups/boots-image-vertical.png
+
+--------------

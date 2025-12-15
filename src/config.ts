@@ -14,7 +14,7 @@ export type ApiConfig = {
   port: string;
   accessKeyId: string;
   s3SecretAccessKey?: string;
-  s3Client?: S3Client;
+  s3Client: S3Client;
 };
 
 const pathToDB = envOrThrow("DB_PATH");

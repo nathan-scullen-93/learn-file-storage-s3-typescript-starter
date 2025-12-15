@@ -4,8 +4,8 @@ import { type ApiConfig } from "../config";
 import { s3, write, type BunRequest, type S3File } from "bun";
 import { BadRequestError, NotFoundError, UserForbiddenError } from "./errors";
 import { getBearerToken, validateJWT } from "../auth";
-import { randomBytes, type UUID } from "crypto";
-import { getVideo, updateVideo } from "../db/videos";
+import { randomBytes, sign, type UUID } from "crypto";
+import { getVideo, updateVideo, type Video } from "../db/videos";
 import path from "path";
 
 export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
@@ -24,7 +24,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
     throw new BadRequestError("video is required");
   }
 
-  const video = getVideo(cfg.db, videoId);
+  let video = getVideo(cfg.db, videoId);
   if (!video) {
     console.log("Video upload failed: video not found");
     throw new NotFoundError("Couldn't find video");
@@ -69,7 +69,7 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
   const metadata = s3.file(s3Key);
 
   try {
-      //Copy the file to s3 storage
+    //Copy the file to s3 storage
     await metadata.write(Bun.file(processedVideo), { type: "video/mp4" });
 
     //Remove the temp video file after processing
@@ -78,7 +78,11 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
     console.log("Removed temporary files");
 
     //Update the videoURL in the database
-    const s3Url = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3Key}`;
+    // const s3Url = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3Key}`;
+    //CH6 L6 Signed URL - only store the s3 key in the db
+    const s3Url = s3Key;
+    video = await dbVideoToSignedVideo(cfg, video);
+
     video.videoURL = s3Url;
     updateVideo(cfg.db, video);
   } catch (error) {
@@ -210,4 +214,33 @@ export async function processVideoForFastStart(
   }
 
   return outputFilePath;
+}
+
+export async function generatePresignedURL(
+  cfg: ApiConfig,
+  key: string,
+  expireTime: number
+): Promise<string> {
+  const url = cfg.s3Client
+    .file(key, {
+      bucket: cfg.s3Bucket,
+    })
+    .presign({
+      expiresIn: expireTime,
+      method: "GET",
+      type: "video/mp4", // No extension for inferring, so we can specify the content type to be JSON
+    });
+
+  return url;
+}
+
+export async function dbVideoToSignedVideo(
+  cfg: ApiConfig,
+  video: Video
+): Promise<Video> {
+  let signedVideo = { ...video };
+  if (!video.videoURL) return video;
+
+  signedVideo.videoURL = await generatePresignedURL(cfg, video.videoURL!, 3600); //3600 = 1 hour
+  return signedVideo;
 }
