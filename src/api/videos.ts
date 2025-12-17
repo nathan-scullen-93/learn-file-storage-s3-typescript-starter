@@ -80,8 +80,9 @@ export async function handlerUploadVideo(cfg: ApiConfig, req: BunRequest) {
     //Update the videoURL in the database
     // const s3Url = `https://${cfg.s3Bucket}.s3.${cfg.s3Region}.amazonaws.com/${s3Key}`;
     //CH6 L6 Signed URL - only store the s3 key in the db
-    const s3Url = s3Key;
-    video = await dbVideoToSignedVideo(cfg, video);
+    // const s3Url = s3Key;
+    // video = await dbVideoToSignedVideo(cfg, video);
+    const s3Url = `${cfg.s3CfDistribution}/${s3Key}`;
 
     video.videoURL = s3Url;
     updateVideo(cfg.db, video);
@@ -216,31 +217,33 @@ export async function processVideoForFastStart(
   return outputFilePath;
 }
 
-export async function generatePresignedURL(
-  cfg: ApiConfig,
-  key: string,
-  expireTime: number
-): Promise<string> {
-  const url = cfg.s3Client
-    .file(key, {
-      bucket: cfg.s3Bucket,
-    })
-    .presign({
-      expiresIn: expireTime,
-      method: "GET",
-      type: "video/mp4", // No extension for inferring, so we can specify the content type to be JSON
-    });
 
-  return url;
-}
 
-export async function dbVideoToSignedVideo(
-  cfg: ApiConfig,
-  video: Video
-): Promise<Video> {
-  let signedVideo = { ...video };
-  if (!video.videoURL) return video;
+// export async function generatePresignedURL(
+//   cfg: ApiConfig,
+//   key: string,
+//   expireTime: number
+// ): Promise<string> {
+//   const url = cfg.s3Client
+//     .file(key, {
+//       bucket: cfg.s3Bucket,
+//     })
+//     .presign({
+//       expiresIn: expireTime,
+//       method: "GET",
+//       type: "video/mp4", // No extension for inferring, so we can specify the content type to be JSON
+//     });
 
-  signedVideo.videoURL = await generatePresignedURL(cfg, video.videoURL!, 3600); //3600 = 1 hour
-  return signedVideo;
-}
+//   return url;
+// }
+
+// export async function dbVideoToSignedVideo(
+//   cfg: ApiConfig,
+//   video: Video
+// ): Promise<Video> {
+//   let signedVideo = { ...video };
+//   if (!video.videoURL) return video;
+
+//   signedVideo.videoURL = await generatePresignedURL(cfg, video.videoURL!, 3600); //3600 = 1 hour
+//   return signedVideo;
+// }
